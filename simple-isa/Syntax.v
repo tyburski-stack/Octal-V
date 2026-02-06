@@ -7,6 +7,16 @@ Definition reg  := nat.
 Definition val  := nat.
 Definition addr := nat.
 
+Definition taint := bool.
+Definition tval := (val * taint)%type.
+
+Definition t_or (t1 t2 : taint) := orb t1 t2. 
+
+Definition tv_val (x : tval) : val := fst x.
+Definition tv_taint (x : tval) : taint := snd x.
+
+Definition mk_tval (v : val) (t : taint) : tval := (v, t).
+
 Inductive instr : Type :=
 | Nop : instr
 | Add : reg -> reg -> reg -> instr          (* rd rs1 rs2 *)
@@ -17,8 +27,8 @@ Inductive instr : Type :=
 
 Definition prog := nat -> option instr.
 
-Definition regs := reg -> val.
-Definition mem  := addr -> option val.
+Definition regs := reg -> tval.
+Definition mem  := addr -> option tval.
 
 Record state : Type := {
   pc : nat;
@@ -26,8 +36,9 @@ Record state : Type := {
   mm : mem;
 }.
 
-Definition regs_set (r : regs) (x : reg) (v : val) : regs :=
-  fun y => if Nat.eqb y x then v else r y.
+Definition regs_set (r : regs) (x : reg) (tv : tval) : regs :=
+  fun y => if Nat.eqb y x then tv else r y.
 
-Definition mem_set (m : mem) (a : addr) (v : val) : mem :=
-  fun b => if Nat.eqb b a then Some v else m b.
+Definition mem_set (m : mem) (a : addr) (tv : tval) : mem :=
+  fun b => if Nat.eqb b a then Some tv else m b.
+

@@ -1,0 +1,13 @@
+# Rocq compilation 
+*.vo
+*.vos
+*.vok
+*.glob
+*.aux
+*.cache
+*.lia.cache
+
+# Other stuff
+.vscode/
+.DS_Store
+Thumbs.db
