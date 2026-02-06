@@ -42,3 +42,5 @@ Definition regs_set (r : regs) (x : reg) (tv : tval) : regs :=
 Definition mem_set (m : mem) (a : addr) (tv : tval) : mem :=
   fun b => if Nat.eqb b a then Some tv else m b.
 
+Definition regs0 : regs := fun _ => mk_tval 0 false.
+

@@ -21,5 +21,4 @@
 ## Files
 - `simple-isa/Syntax.v` — ISA datatypes + machine state + update helpers
 - `simple-isa/Machine.v` — operational semantics (`step`)
-- `simple-isa/Test.v` — example programs/tests
 - `_CoqProject` — build/loadpath config (`-Q simple-isa SimpleIsa`)

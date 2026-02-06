@@ -37,6 +37,7 @@ Inductive step (P : prog) : state -> state -> Prop :=
       P (pc s) = Some (Load rd base off) ->
       a = tv_val (rf s base) + off ->
       mm s a = Some tv ->
+      let t := t_or (tv_taint (rf s base)) (tv_taint tv) in
       step P s {| pc := pc s + 1;
                   rf := regs_set (rf s) rd tv;
                   mm := mm s |}
