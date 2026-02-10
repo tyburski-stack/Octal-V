@@ -22,3 +22,10 @@
 - `simple-isa/Syntax.v` — ISA datatypes + machine state + update helpers
 - `simple-isa/Machine.v` — operational semantics (`step`)
 - `_CoqProject` — build/loadpath config (`-Q simple-isa SimpleIsa`)
+
+## Makefile Instructions
+- the _CoqProject is handwritten (view in the repo).
+- Makefile, Makefile.conf are generated. 
+- .Makefile.d is also generated (the Makefile sets VDFILE := .Makefile.d and creates it via rocq dep).
+- Build commands: if the generated Makefile is present, make clean && make. 
+- If not, regenerate first with coq_makefile -f _CoqProject -o Makefile and then run make clean && make.

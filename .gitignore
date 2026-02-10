@@ -6,6 +6,9 @@
 *.aux
 *.cache
 *.lia.cache
+Makefile.conf
+.Makefile.d
+
 
 # Other stuff
 .vscode/
