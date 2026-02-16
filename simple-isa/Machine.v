@@ -61,74 +61,90 @@ Definition tbytes_vals (tbs : list tbyte) : list nat :=
 
 (** ***)
 
+(* change per-instruction stepping to partial executor for instr instead *)
+Definition exec_instr (s : state) (i : instr) : option state :=
+  match i with
+  | Nop => Some s
 
-(* updated step/load rules for bytes *)
-
-Inductive step (P : prog) : state -> state -> Prop :=
-| StepNop :
-    forall s,
-      P (pc s) = Some Nop ->
-      step P s {| pc := pc s + 1; rf := rf s; mm := mm s |}
-
-| StepAdd :
-    forall s rd rs1 rs2,
-      P (pc s) = Some (Add rd rs1 rs2) ->
+  | Add rd rs1 rs2 =>
       let tv1 := rf s rs1 in 
       let tv2 := rf s rs2 in
       let v := tv_val tv1 + tv_val tv2 in
       let t := t_or (tv_taint tv1) (tv_taint tv2) in
-      step P s {| pc := pc s + 1;
-                  rf := regs_set (rf s) rd (mk_tval v t);
-                  mm := mm s|}
+      Some {| pc := pc s;
+              rf := regs_set (rf s) rd (mk_tval v t);
+              mm := mm s|}
+  
+  | Mul rd rs1 rs2 =>
+      let tv1 := rf s rs1 in 
+      let tv2 := rf s rs2 in
+      let v := tv_val tv1 * tv_val tv2 in
+      let t := t_or (tv_taint tv1) (tv_taint tv2) in
+      Some {| pc := pc s;
+              rf := regs_set (rf s) rd (mk_tval v t);
+              mm := mm s|}
 
-| StepMul :
-    forall s rd rs1 rs2,
-      P (pc s) = Some (Mul rd rs1 rs2) ->
-        let tv1 := rf s rs1 in 
-        let tv2 := rf s rs2 in
-        let v := tv_val tv1 * tv_val tv2 in
-        let t := t_or (tv_taint tv1) (tv_taint tv2) in
-        step P s {| pc := pc s + 1;
+  | Load sz rd base off =>
+      if tv_taint (rf s base) then None
+      else
+        let a := tv_val (rf s base) + off in
+        match load_bytes (mm s) a (size_bytes sz) with
+        | None => None
+        | Some tbs =>
+            let v := pack_le (tbytes_vals tbs) in
+            let t := tbytes_taint tbs in
+            Some {| pc := pc s;
                     rf := regs_set (rf s) rd (mk_tval v t);
-                    mm := mm s|}
+                    mm := mm s |}
+        end
+  
+  | Store sz rs_val base off =>
+      if tv_taint (rf s base) then None
+      else 
+        let a := tv_val (rf s base) + off in
+        let v := tv_val (rf s rs_val) in
+        let t := tv_taint (rf s rs_val) in 
+        let bs := unpack_le v (size_bytes sz) in 
+        let tbs := map (fun b => mk_tbyte b t) bs in
+        Some {| pc := pc s;
+                rf := rf s; 
+                mm := store_bytes (mm s) a tbs |}
+    end.
+(** ***)
 
-(* Load updated *)
-| StepLoad :
-    forall s sz rd base off a tbs,
-      P (pc s) = Some (Load sz rd base off) ->
-      tv_taint (rf s base) = false ->
-      a = tv_val (rf s base) + off ->
-      load_bytes (mm s) a (size_bytes sz) = Some tbs ->
-      let v := pack_le (tbytes_vals tbs) in
-      let t := tbytes_taint tbs in
-      step P s {| pc := pc s + 1;
-                  rf := regs_set (rf s) rd (mk_tval v t);
-                  mm := mm s |}
+(* running the list, if some instruction gets stuck the whole block does **)
+Fixpoint exec_code (s : state) (c : list instr) : option state :=
+    match c with
+    | nil => Some s
+    | i :: c' =>
+        match exec_instr s i with
+        | None => None
+        | Some s' => exec_code s' c'
+        end
+    end.
+(** ***)
+  
+(* terminator execution **)
+Definition exec_term (s : state) (t : term) : option state :=
+  match t with
+  | THalt => None (* if condition reg tainted, get stuck **)
+  | TJmp l => 
+      Some {| pc := l; rf := rf s; mm := mm s|}
+  | TBrZero r l_then l_else => (* if explicit tainted/not tainted, l_then l_else*)
+      if tv_taint (rf s r) then None
+      else if Nat.eqb (tv_val (rf s r)) 0
+          then Some {| pc := l_then; rf := rf s; mm := mm s|}
+          else Some {| pc := l_else; rf := rf s; mm := mm s|}
+  end.
+(** ***)
 
-(* Store updated *)
-| StepStore :
-    forall s sz rs_val base off a,
-      P (pc s) = Some (Store sz rs_val base off) ->
-      tv_taint (rf s base) = false ->
-      a = tv_val (rf s base) + off ->
-      let v := tv_val (rf s rs_val) in
-      let t := tv_taint (rf s rs_val) in 
-      let bs := unpack_le v (size_bytes sz) in 
-      let tbs := map (fun b => mk_tbyte b t) bs in
-      step P s {| pc := pc s + 1;
-                  rf := rf s; 
-                  mm := store_bytes (mm s) a tbs |}
+(* new step inductive to execute one block*)
+Inductive step (P : prog) : state -> state -> Prop :=
+| StepBlock :
+    forall s b s_mid s',
+      P (pc s) = Some b ->
+      exec_code s (code b) = Some s_mid ->
+      exec_term s_mid (termi b) = Some s' ->
+      step P s s'.
+(** ***)
 
-| StepBrZeroTaken :
-    forall s rs off,
-      P (pc s) = Some (BrZero rs off) ->
-      tv_taint (rf s rs) = false ->
-      tv_val (rf s rs) = 0 ->
-      step P s {| pc := pc s + 1 + off; rf := rf s; mm := mm s |}
-
-| StepBrZeroNotTaken :
-    forall s rs off,
-      P (pc s) = Some (BrZero rs off) ->
-      tv_taint (rf s rs) = false ->
-      tv_val (rf s rs) <> 0 ->
-      step P s {| pc := pc s + 1; rf := rf s; mm := mm s |}. 

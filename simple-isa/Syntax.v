@@ -1,7 +1,8 @@
 
 
 Set Warnings "-notation-overridden".
-From Stdlib Require Import Arith Nat Bool.
+From Stdlib Require Import Arith Nat Bool Lists.List.
+
 
 
 Definition reg  := nat.
@@ -9,6 +10,8 @@ Definition val  := nat.
 Definition taint := bool.
 Definition addr := nat.
 
+(* introduce block name **)
+Definition label := nat.
 
 (* defined byte and tainted byte *)
 Definition byte := nat.
@@ -38,17 +41,29 @@ Inductive instr : Type :=
 | Add : reg -> reg -> reg -> instr                 (* rd rs1 rs2 *)
 | Mul : reg -> reg -> reg -> instr                 (* rd rs1 rs2 *)
 | Load  : size -> reg -> reg -> nat -> instr       (* sz rd base off *)
-| Store : size -> reg -> reg -> nat -> instr       (* sz rs base off *)
-| BrZero : reg -> nat -> instr.                    (* rs off *)
+| Store : size -> reg -> reg -> nat -> instr.      (* sz rs base off *)
 
-Definition prog := nat -> option instr.
 
+(* Transition from BrZero to separate terminator type*)
+Inductive term : Type :=
+| TJmp : label -> term
+| TBrZero : reg -> label -> label -> term
+| THalt : term.
+
+
+(* Block record *)
+Record block : Type := {
+  code : list instr;
+  termi: term;
+}.
+
+
+Definition prog := label -> option block. (* Update from option instr to option block*)
 Definition regs := reg -> tval. (* (val * taint) *)
 Definition mem  := addr -> option tbyte.
 
-
 Record state : Type := {
-  pc : nat;
+  pc : label;
   rf : regs;
   mm : mem;
 }.
