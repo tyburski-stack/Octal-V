@@ -59,92 +59,104 @@ Definition tbytes_taint (tbs : list tbyte) : taint :=
 Definition tbytes_vals (tbs : list tbyte) : list nat :=
   map tb_val tbs.
 
+(* Option nth indexing **)
+Fixpoint nth_opt {A : Type} (n : nat) (xs : list A) : option A :=
+  match n, xs with 
+  | O, x :: _ => Some x
+  | S n', _ :: xs' => nth_opt n' xs'
+  | _, _ => None
+  end. 
+
+(* fetch current instruction **)
+Definition fetch_instr (P : prog) (p : pc) : option instr :=
+  match P (pc_lbl p) with
+  | None => None 
+  | Some blk => nth_opt (pc_ix p) blk
+  end.
+
+(* pc updates (fallthrough + jmp target) **)
+Definition pc_next (p : pc) : pc :=
+  {| pc_lbl := pc_lbl p;
+     pc_ix := S (pc_ix p) |}.
+
+Definition pc_jump (l : label) : pc :=
+  {| pc_lbl := l; 
+     pc_ix := 0 |}.
 (** ***)
 
-(* change per-instruction stepping to partial executor for instr instead *)
+(* Rewrite exec_instr to advance/jump the pc 
+   also now covers Jmp/BrZero/Halt 
+   fallthrough is pc_next; jump is pc_jump; "stuck" is None. **)
 Definition exec_instr (s : state) (i : instr) : option state :=
   match i with
-  | Nop => Some s
-
+  | Nop =>
+      Some {| pcv := pc_next (pcv s); rf := rf s; mm := mm s |}
+  
   | Add rd rs1 rs2 =>
-      let tv1 := rf s rs1 in 
+      let tv1 := rf s rs1 in
       let tv2 := rf s rs2 in
       let v := tv_val tv1 + tv_val tv2 in
       let t := t_or (tv_taint tv1) (tv_taint tv2) in
-      Some {| pc := pc s;
+      Some {| pcv := pc_next (pcv s);
               rf := regs_set (rf s) rd (mk_tval v t);
-              mm := mm s|}
-  
+              mm := mm s |}
+
   | Mul rd rs1 rs2 =>
-      let tv1 := rf s rs1 in 
+      let tv1 := rf s rs1 in
       let tv2 := rf s rs2 in
       let v := tv_val tv1 * tv_val tv2 in
       let t := t_or (tv_taint tv1) (tv_taint tv2) in
-      Some {| pc := pc s;
+      Some {| pcv := pc_next (pcv s);
               rf := regs_set (rf s) rd (mk_tval v t);
-              mm := mm s|}
+              mm := mm s |}
 
   | Load sz rd base off =>
-      if tv_taint (rf s base) then None
-      else
-        let a := tv_val (rf s base) + off in
-        match load_bytes (mm s) a (size_bytes sz) with
-        | None => None
-        | Some tbs =>
-            let v := pack_le (tbytes_vals tbs) in
-            let t := tbytes_taint tbs in
-            Some {| pc := pc s;
-                    rf := regs_set (rf s) rd (mk_tval v t);
-                    mm := mm s |}
-        end
+    if tv_taint (rf s base) then None
+    else
+      let a := tv_val (rf s base) + off in
+      match load_bytes (mm s) a (size_bytes sz) with
+      | None => None
+      | Some tbs =>
+          let v := pack_le (tbytes_vals tbs) in
+          let t := tbytes_taint tbs in
+          Some {| pcv := pc_next (pcv s);
+                  rf := regs_set (rf s) rd (mk_tval v t);
+                  mm := mm s |}
+      end
   
-  | Store sz rs_val base off =>
-      if tv_taint (rf s base) then None
+  | Store sz rs_val base off => 
+      if tv_taint (rf s base) then None 
       else 
         let a := tv_val (rf s base) + off in
-        let v := tv_val (rf s rs_val) in
+        let v := tv_val (rf s rs_val) in 
         let t := tv_taint (rf s rs_val) in 
-        let bs := unpack_le v (size_bytes sz) in 
-        let tbs := map (fun b => mk_tbyte b t) bs in
-        Some {| pc := pc s;
-                rf := rf s; 
+        let bs := unpack_le v (size_bytes sz) in
+        let tbs := map (fun b => mk_tbyte b t) bs in 
+        Some {| pcv := pc_next (pcv s);
+                rf := rf s;
                 mm := store_bytes (mm s) a tbs |}
-    end.
-(** ***)
 
-(* running the list, if some instruction gets stuck the whole block does **)
-Fixpoint exec_code (s : state) (c : list instr) : option state :=
-    match c with
-    | nil => Some s
-    | i :: c' =>
-        match exec_instr s i with
-        | None => None
-        | Some s' => exec_code s' c'
-        end
-    end.
-(** ***)
+  | Jmp l =>
+      Some {| pcv := pc_jump l; rf := rf s; mm := mm s |} 
   
-(* terminator execution **)
-Definition exec_term (s : state) (t : term) : option state :=
-  match t with
-  | THalt => None (* if condition reg tainted, get stuck **)
-  | TJmp l => 
-      Some {| pc := l; rf := rf s; mm := mm s|}
-  | TBrZero r l_then l_else => (* if explicit tainted/not tainted, l_then l_else*)
+  | BrZero r l =>
       if tv_taint (rf s r) then None
       else if Nat.eqb (tv_val (rf s r)) 0
-          then Some {| pc := l_then; rf := rf s; mm := mm s|}
-          else Some {| pc := l_else; rf := rf s; mm := mm s|}
+          then Some {| pcv := pc_jump l; rf := rf s; mm := mm s |}
+          else Some {| pcv := pc_next (pcv s); rf := rf s; mm := mm s|}
+  
+  | Halt => None
   end.
 (** ***)
 
-(* new step inductive to execute one block*)
+(* Fetch one instruction then execute it 
+  if fetch_instr fails, no rule applies -> stuck
+  if exec_instr returns None, no rule applies -> stuck **)
 Inductive step (P : prog) : state -> state -> Prop :=
-| StepBlock :
-    forall s b s_mid s',
-      P (pc s) = Some b ->
-      exec_code s (code b) = Some s_mid ->
-      exec_term s_mid (termi b) = Some s' ->
-      step P s s'.
-(** ***)
+  | StepInstr :
+      forall s i s',
+        fetch_instr P (pcv s) = Some i ->
+        exec_instr s i = Some s' ->
+        step P s s'.
+  
 

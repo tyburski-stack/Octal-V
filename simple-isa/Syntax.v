@@ -1,8 +1,6 @@
 
-
 Set Warnings "-notation-overridden".
 From Stdlib Require Import Arith Nat Bool Lists.List.
-
 
 
 Definition reg  := nat.
@@ -32,38 +30,37 @@ Definition tv_taint (x : tval) : taint := snd x.
 Definition mk_tval (v : val) (t : taint) : tval := (v, t).
 
 
+(* program counter identifies instruction location inside program **)
+Record pc : Type := {
+  pc_lbl : label; (* which block **)
+  pc_ix  : nat;   (* which instr in block **)
+}.
+
 
 (* Extend induction Syntax ... *)
 Inductive size : Type := S1 | S2 | S4 | S8.
 
+(* edit instr (straight-line + ctrl flow) **)
 Inductive instr : Type :=
 | Nop : instr
 | Add : reg -> reg -> reg -> instr                 (* rd rs1 rs2 *)
 | Mul : reg -> reg -> reg -> instr                 (* rd rs1 rs2 *)
 | Load  : size -> reg -> reg -> nat -> instr       (* sz rd base off *)
-| Store : size -> reg -> reg -> nat -> instr.      (* sz rs base off *)
+| Store : size -> reg -> reg -> nat -> instr       (* sz rs base off *)
+| Jmp   : label -> instr
+| BrZero : reg -> label -> instr
+| Halt  : instr. 
 
 
-(* Transition from BrZero to separate terminator type*)
-Inductive term : Type :=
-| TJmp : label -> term
-| TBrZero : reg -> label -> label -> term
-| THalt : term.
+(* Update block **)
+Definition block : Type := list instr.
 
-
-(* Block record *)
-Record block : Type := {
-  code : list instr;
-  termi: term;
-}.
-
-
-Definition prog := label -> option block. (* Update from option instr to option block*)
+Definition prog := label -> option block. (* map labels to blocks *)
 Definition regs := reg -> tval. (* (val * taint) *)
 Definition mem  := addr -> option tbyte.
 
 Record state : Type := {
-  pc : label;
+  pcv : pc;
   rf : regs;
   mm : mem;
 }.
