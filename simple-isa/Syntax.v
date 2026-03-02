@@ -53,8 +53,8 @@ Inductive term : Type :=
 
 (* Block record *)
 Record block : Type := {
-  code : list instr;
-  termi: term;
+  code  : list instr;
+  termi : term;
 }.
 
 
@@ -62,10 +62,17 @@ Definition prog := label -> option block. (* Update from option instr to option 
 Definition regs := reg -> tval. (* (val * taint) *)
 Definition mem  := addr -> option tbyte.
 
+
+(* reintroduce location pc **)
+Record pc : Type := {
+  pc_lbl : label;
+  pc_ix  : nat;
+}.
+
 Record state : Type := {
-  pc : label;
-  rf : regs;
-  mm : mem;
+  pcv : pc;      (* renamed from pc *)
+  rf  : regs;
+  mm  : mem;
 }.
 
 Definition regs_set (r : regs) (x : reg) (tv : tval) : regs :=
