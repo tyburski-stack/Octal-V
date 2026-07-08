@@ -1,6 +1,6 @@
 Set Warnings "-notation-overridden".
 From Stdlib Require Import Arith Nat Bool Lists.List.
-From SimpleIsa Require Import Syntax Machine.
+From SimpleIsa Require Import Syntax Machine Types.
 
 (* Abstract typing layer / well-formedness predicates *)
 
@@ -11,6 +11,8 @@ Definition terminal (P : prog) (s : state) : Prop :=
 (** define helper predicates for "safe to execute" *)
 Definition instr_safe (s : state) (i : instr) : Prop :=
   exists s', exec_instr s i = Some s'.
+
+(** *)
 
 Definition term_safe (s : state) (t : term) : Prop :=
   t = THalt \/ exists s', exec_term s t = Some s'.
@@ -31,7 +33,9 @@ Definition wf_state (P : prog) (Γ : tyenv) (s : state) : Prop :=
   end.
 
 
+
 (** add typing preservation condition for Γ *)
+
 Definition tyenv_preserves (P : prog) (Γ : tyenv) : Prop :=
   forall s s',
     wf_state P Γ s ->
