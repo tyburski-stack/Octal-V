@@ -4,5 +4,8 @@
 
 simple-isa/Syntax.v
 simple-isa/Machine.v
+simple-isa/Safety.v
+simple-isa/Typing.v
+simple-isa/MemTaint.v
+simple-isa/DepRange.v
 simple-isa/Test.v
-
